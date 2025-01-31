@@ -19,6 +19,8 @@ except ImportError:
 from .logging import get_logger
 from .tokenizer import ChatTemplateTokenizer
 from .utils import has_materialized
+from pathlib import Path
+import yaml
 
 logger = get_logger(__name__)
 
@@ -56,6 +58,16 @@ def read_parquet(path: str, max_batch_size: int) -> Dataset:
         override_num_blocks=num_blocks,
     )
 
+def load_rayllm_config(config_path: str) -> Dict[str, Any]:
+    if isinstance(config_path, str):
+        config_path = Path(config_path)
+        if not config_path.exists():
+            raise FileNotFoundError(f"Engine config file {config} not found.")
+        with open(config_path, "r") as filep:
+            config = yaml.safe_load(filep)
+
+    assert isinstance(config, dict)
+    return config
 
 @dataclass
 class WorkloadBase:
@@ -265,3 +277,17 @@ class ChatWorkloadBase(WorkloadBase):
     """The base class for a chat workload."""
 
     tokenizer_cls: Any = ChatTemplateTokenizer
+
+@dataclass
+class EvalWorkload(ChatWorkloadBase):
+    dataset_fraction: float = 1.0
+    sampling_params: Dict[str, Any] = field(
+        default_factory=lambda: {"max_tokens": 4096}
+    )
+
+    def parse_row(self, row: Dict[str, Any]) -> Dict[str, Any]:
+        """Parse each row in the dataset to make them compatible with
+        OpenAI chat API messages. Specifically, the output row should only
+        include a single key "messages" with type Dict[str, Union[str, List[Dict]]].      
+        """
+        return {"messages": row["item"][1], "index": row["item"][0]}
